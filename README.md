@@ -1,5 +1,8 @@
 # BSP Speech Parser
 
+![Python](https://img.shields.io/badge/Python-3.6%2B-blue)
+![License](https://img.shields.io/badge/License-MIT-green)
+
 A Python library for extracting and parsing speeches from the Bangko Sentral ng Pilipinas (BSP) website.
 
 ## Overview
