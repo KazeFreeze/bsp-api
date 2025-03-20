@@ -1,3 +1,4 @@
+# bsp_speech_parser.py
 import requests
 import pandas as pd
 import os
@@ -7,11 +8,11 @@ import json
 from datetime import datetime, timedelta, timezone
 from dateutil import parser as date_parser
 import html
-import ftfy  # Added import for ftfy
+import ftfy
 
 
 class BSPSpeechParser:
-    def __init__(self):
+    def __init__(self, output_folder=None):
         self.base_url = (
             "https://www.bsp.gov.ph/_api/web/lists/getByTitle('Speeches%20list')/items"
         )
@@ -20,15 +21,17 @@ class BSPSpeechParser:
             "Content-Type": "application/json;odata=verbose;charset=utf-8",
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
         }
-        self.output_folder = "bsp_speeches"
         # Philippine timezone (UTC+8)
         self.ph_timezone = timezone(timedelta(hours=8))
 
-        # Create output folder if it doesn't exist
-        if not os.path.exists(self.output_folder):
-            os.makedirs(self.output_folder)
-            os.makedirs(os.path.join(self.output_folder, "raw"))
-            os.makedirs(os.path.join(self.output_folder, "csv"))
+        # Set output folder if provided
+        self.output_folder = output_folder
+        if self.output_folder:
+            # Create output folder if it doesn't exist
+            if not os.path.exists(self.output_folder):
+                os.makedirs(self.output_folder)
+                os.makedirs(os.path.join(self.output_folder, "raw"))
+                os.makedirs(os.path.join(self.output_folder, "csv"))
 
     def parse_date(self, date_str):
         """Parse date string in various formats to ISO format while maintaining Philippine Time context"""
@@ -210,6 +213,9 @@ class BSPSpeechParser:
 
     def save_raw_file(self, content, filename):
         """Save the raw content to a file"""
+        if not self.output_folder:
+            raise ValueError("Output folder not set")
+
         path = os.path.join(self.output_folder, "raw", filename)
         with open(path, "w", encoding="utf-8") as f:
             json.dump(content, f, indent=4, ensure_ascii=False)
@@ -217,6 +223,9 @@ class BSPSpeechParser:
 
     def save_csv_file(self, speeches, filename):
         """Save the speeches to a CSV file"""
+        if not self.output_folder:
+            raise ValueError("Output folder not set")
+
         path = os.path.join(self.output_folder, "csv", filename)
 
         # Define the CSV headers - only include the fields we want in our CSV
@@ -232,49 +241,76 @@ class BSPSpeechParser:
 
         print(f"CSV file saved: {path}")
 
-    def process_speeches(self, start_date=None, end_date=None):
-        """Process speeches within the given date range"""
-        # Generate a filename based on the date range
-        date_str_start = start_date.replace("/", "-") if start_date else "all"
-        date_str_end = end_date.replace("/", "-") if end_date else "today"
-        filename_prefix = f"speeches_{date_str_start}_to_{date_str_end}"
+    def get_speeches(self, start_date=None, end_date=None, save_files=False):
+        """
+        Get speeches within the given date range and return them as a list
 
-        # Fetch speeches
+        Args:
+            start_date (str, optional): Start date in any recognized format. Defaults to None.
+            end_date (str, optional): End date in any recognized format. Defaults to None.
+            save_files (bool, optional): Whether to save raw and CSV files. Defaults to False.
+
+        Returns:
+            list: List of dictionaries containing speech data
+        """
         try:
-            # Make the request
-            print(
-                f"Fetching speeches from {start_date if start_date else 'beginning'} to {end_date if end_date else 'today'}..."
-            )
-
+            # Fetch speeches
             speeches_raw = self.fetch_speeches(start_date, end_date)
 
-            if speeches_raw:
-                # Save raw file (JSON format)
+            if not speeches_raw:
+                print("No speeches found for the given date range.")
+                return []
+
+            # Extract and clean the data
+            speeches_clean = self.extract_speech_data(speeches_raw)
+
+            # Save files if requested
+            if save_files:
+                if not self.output_folder:
+                    raise ValueError("Output folder must be set to save files")
+
+                # Generate a filename based on the date range
+                date_str_start = start_date.replace("/", "-") if start_date else "all"
+                date_str_end = end_date.replace("/", "-") if end_date else "today"
+                filename_prefix = f"speeches_{date_str_start}_to_{date_str_end}"
+
+                # Save raw file
                 raw_filename = f"{filename_prefix}.json"
                 self.save_raw_file(speeches_raw, raw_filename)
-
-                # Extract and clean the data
-                speeches_clean = self.extract_speech_data(speeches_raw)
 
                 # Save CSV
                 csv_filename = f"{filename_prefix}.csv"
                 self.save_csv_file(speeches_clean, csv_filename)
 
-                print(f"Successfully processed {len(speeches_raw)} speeches.")
-                return True
-            else:
-                print("No speeches found for the given date range.")
-                return False
+            return speeches_clean
+
         except Exception as e:
-            print(f"Error processing speeches: {e}")
+            print(f"Error getting speeches: {e}")
             import traceback
 
             traceback.print_exc()
-            return False
+            return []
 
 
-def main():
-    parser = BSPSpeechParser()
+def get_bsp_speeches(start_date=None, end_date=None, output_folder=None):
+    """
+    Convenience function to get BSP speeches within a date range
+
+    Args:
+        start_date (str, optional): Start date in any recognized format. Defaults to None.
+        end_date (str, optional): End date in any recognized format. Defaults to None.
+        output_folder (str, optional): Folder to save files. Defaults to None.
+
+    Returns:
+        list: List of dictionaries containing speech data
+    """
+    parser = BSPSpeechParser(output_folder)
+    return parser.get_speeches(start_date, end_date, save_files=bool(output_folder))
+
+
+if __name__ == "__main__":
+    # This will run when the script is executed directly
+    parser = BSPSpeechParser("bsp_speeches")
 
     print("BSP Speech Parser")
     print("=================")
@@ -293,8 +329,5 @@ def main():
     start_date = None if start_date == "" else start_date
     end_date = None if end_date == "" else end_date
 
-    parser.process_speeches(start_date, end_date)
-
-
-if __name__ == "__main__":
-    main()
+    speeches = parser.get_speeches(start_date, end_date, save_files=True)
+    print(f"Successfully processed {len(speeches)} speeches.")
